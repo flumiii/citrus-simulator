@@ -98,7 +98,12 @@ public class TestResultResourceIT {
      * if they test an entity which requires the current entity.
      */
     public static TestResult createEntity(EntityManager entityManager) {
-        return TestResult.builder()
+        return createEntity(entityManager, false);
+
+    }
+
+    public static TestResult createEntity(EntityManager entityManager, boolean includeScenarioExecution) {
+        var testResult = TestResult.builder()
             .status(DEFAULT_STATUS)
             .testName(DEFAULT_TEST_NAME)
             .className(DEFAULT_CLASS_NAME)
@@ -108,6 +113,12 @@ public class TestResultResourceIT {
             .createdDate(DEFAULT_CREATED_DATE)
             .lastModifiedDate(DEFAULT_LAST_MODIFIED_DATE)
             .build();
+
+        if (includeScenarioExecution) {
+            testResult.setScenarioExecution(ScenarioExecutionResourceIT.createEntity(entityManager));
+        }
+
+        return testResult;
     }
 
     /**
@@ -758,16 +769,18 @@ public class TestResultResourceIT {
     @Test
     @Transactional
     void deleteAllTestResults() throws Exception {
-        TestParameter testParameter = getOrCreateTestParameterWithTestResult();
+        testResult = createEntity(entityManager, true);
+        getOrCreateTestParameterWithTestResult();
 
-        int databaseSizeBeforeDelete = testResultRepository.findAll().size();
+        assertThat(testResultRepository.findAll())
+            .isNotEmpty();
 
         mockMvc
             .perform(delete(ENTITY_API_URL).accept(MediaType.APPLICATION_JSON))
             .andExpect(status().isNoContent());
 
-        List<TestResult> eventList = testResultRepository.findAll();
-        assertThat(eventList).hasSize(databaseSizeBeforeDelete - 1);
+        assertThat(testResultRepository.findAll())
+            .isEmpty();
     }
 
     private TestParameter getOrCreateTestParameterWithTestResult() {
