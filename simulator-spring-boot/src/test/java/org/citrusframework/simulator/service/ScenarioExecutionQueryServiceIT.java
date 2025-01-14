@@ -29,6 +29,7 @@ import org.citrusframework.simulator.repository.ScenarioExecutionRepository;
 import org.citrusframework.simulator.service.criteria.ScenarioExecutionCriteria;
 import org.citrusframework.simulator.service.filter.IntegerFilter;
 import org.citrusframework.simulator.service.filter.LongFilter;
+import org.citrusframework.simulator.service.filter.StringFilter;
 import org.citrusframework.simulator.web.rest.MessageResourceIT;
 import org.citrusframework.simulator.web.rest.ScenarioActionResourceIT;
 import org.citrusframework.simulator.web.rest.ScenarioExecutionResourceIT;
@@ -93,6 +94,7 @@ class ScenarioExecutionQueryServiceIT {
         scenarioAction = ScenarioActionResourceIT.createEntity(entityManager);
         message = MessageResourceIT.createEntityBuilder(entityManager)
             .citrusMessageId("e4d560c9-720f-4283-ac89-8f28b1d0f277")
+            .payload("foo")
             .build()
             .addHeader(MessageHeader.builder()
                 .name(TRACEPARENT)
@@ -118,6 +120,7 @@ class ScenarioExecutionQueryServiceIT {
                 .addScenarioMessage(
                     MessageResourceIT.createEntityBuilder(entityManager)
                         .citrusMessageId("6eda9f2b-3a7a-423f-b19c-329ed3dd5ecc")
+                        .payload("bar")
                         .build()
                         .addHeader(MessageHeader.builder()
                             .name(TRACEPARENT)
@@ -151,6 +154,7 @@ class ScenarioExecutionQueryServiceIT {
                 .addScenarioMessage(
                     MessageResourceIT.createEntityBuilder(entityManager)
                         .citrusMessageId("66666a09-7099-461b-aebb-260e776cd07f")
+                        .payload("baz")
                         .build()
                         .addHeader(MessageHeader.builder()
                             .name("numeric")
@@ -228,6 +232,14 @@ class ScenarioExecutionQueryServiceIT {
         }
 
         @Test
+        void selectWithJoinToMessagesPayload() {
+            var scenarioExecutionCriteria = new ScenarioExecutionCriteria();
+            scenarioExecutionCriteria.setScenarioMessagesPayload((StringFilter) new StringFilter().setEquals(message.getPayload()));
+
+            assertThatScenarioExecutionAtIndexSelectedByCriteria(scenarioExecutionCriteria, 1);
+        }
+
+        @Test
         void selectWithJoinToScenarioParameters() {
             var scenarioExecutionCriteria = new ScenarioExecutionCriteria();
             scenarioExecutionCriteria.setScenarioParametersId((LongFilter) new LongFilter().setEquals(scenarioParameter.getParameterId()));
@@ -246,8 +258,10 @@ class ScenarioExecutionQueryServiceIT {
         public static Stream<Arguments> selectWithJoinToMessageHeader() {
             return Stream.of(
                 arguments("83def191b1dda4c79c00ae4c443f0ca2", 0),
-                arguments(TRACEPARENT + "=" + MESSAGE_1_TRACEPARENT, 1),
-                arguments(TRACEPARENT + "~1344094d192deb39a02025c6f9a67e3d", 2)
+                arguments(TRACEPARENT.toLowerCase() + "=" + MESSAGE_1_TRACEPARENT.toLowerCase(), 1),
+                arguments(TRACEPARENT.toLowerCase() + "=" + MESSAGE_1_TRACEPARENT.toUpperCase(), 1),
+                arguments(TRACEPARENT.toUpperCase() + "=" + MESSAGE_1_TRACEPARENT.toLowerCase(), 1),
+                arguments(TRACEPARENT.toLowerCase() + "~1344094d192deb39a02025c6f9a67e3d", 2)
             );
         }
 

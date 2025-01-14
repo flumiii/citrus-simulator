@@ -16,7 +16,7 @@
 
   <app-filter [filters]="displayFilters"></app-filter>
 
-  <div class="alert alert-warning" id="no-result" *ngIf="messages?.length === 0">
+  <div class="alert alert-warning" id="no-result" *ngIf="messages?.length === 0" data-test="noDataFound">
     <span jhiTranslate="citrusSimulatorApp.message.home.notFound">No Messages found</span>
   </div>
 
@@ -80,7 +80,7 @@
             <a [routerLink]="['/message', message.messageId, 'view']" data-test="messageEntityMessageId">{{ message.messageId }}</a>
           </td>
           <td data-test="messageEntityMessageDirection">{{ message.direction }}</td>
-          <td data-test="messageEntityMessagePayload">{{ message.payload }}</td>
+          <td data-test="messageEntityMessagePayload"><code *ngIf="message.payload" [highlightAuto]="message.payload"></code></td>
           <td data-test="messageEntityMessageCitrusMessage">{{ message.citrusMessageId }}</td>
           <td>
             <div *ngIf="message.scenarioExecutionId">

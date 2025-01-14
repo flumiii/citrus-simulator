@@ -108,7 +108,7 @@ public class TestResult extends AbstractAuditingEntity<TestResult, Long> impleme
     /**
      * Optional test parameters
      */
-    @OneToMany(mappedBy = "testResult", cascade = {REMOVE})
+    @OneToMany(mappedBy = "testResult", cascade = ALL)
     @JsonIgnoreProperties(value = {"testResult"}, allowSetters = true)
     private final Set<TestParameter> testParameters = new HashSet<>();
 
@@ -133,7 +133,7 @@ public class TestResult extends AbstractAuditingEntity<TestResult, Long> impleme
     private String failureType;
 
     @ToString.Exclude
-    @OneToOne(mappedBy = "testResult", cascade = ALL)
+    @OneToOne(mappedBy = "testResult", cascade = {REMOVE})
     private ScenarioExecution scenarioExecution;
 
     /**

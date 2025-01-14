@@ -99,7 +99,6 @@ public class TestResultResourceIT {
      */
     public static TestResult createEntity(EntityManager entityManager) {
         return createEntity(entityManager, false);
-
     }
 
     public static TestResult createEntity(EntityManager entityManager, boolean includeScenarioExecution) {
@@ -115,7 +114,9 @@ public class TestResultResourceIT {
             .build();
 
         if (includeScenarioExecution) {
-            testResult.setScenarioExecution(ScenarioExecutionResourceIT.createEntity(entityManager));
+            var scenarioExecution = ScenarioExecutionResourceIT.createEntity(entityManager);
+            entityManager.persist(scenarioExecution);
+            testResult.setScenarioExecution(scenarioExecution);
         }
 
         return testResult;

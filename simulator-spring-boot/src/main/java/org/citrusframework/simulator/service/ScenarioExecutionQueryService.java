@@ -209,6 +209,15 @@ public class ScenarioExecutionQueryService extends QueryService<ScenarioExecutio
                     specification = specification.and(messageHeaderSpecification);
                 }
             }
+            if (nonNull(criteria.getScenarioMessagesPayload())) {
+                specification =
+                    specification.and(
+                        buildSpecification(
+                            criteria.getScenarioMessagesPayload(),
+                            root -> root.join(ScenarioExecution_.scenarioMessages, JoinType.LEFT).get(Message_.payload)
+                        )
+                    );
+            }
         }
         return specification;
     }
@@ -243,7 +252,7 @@ public class ScenarioExecutionQueryService extends QueryService<ScenarioExecutio
         }
 
         Specification<ScenarioExecution> messageHeaderKeyEqualsSpecification = buildSpecification(
-            new StringFilter().setEquals(messageHeaderFilter.key),
+            new StringFilter().setEqualsIgnoreCase(messageHeaderFilter.key),
             root -> joinMessageHeaders(root).get(MessageHeader_.name));
 
         var messageHeaderValueSpecification = switch (messageHeaderFilter.operator) {
@@ -266,7 +275,7 @@ public class ScenarioExecutionQueryService extends QueryService<ScenarioExecutio
 
     private static SetJoin<Message, MessageHeader> joinMessageHeaders(Root<ScenarioExecution> root) {
         return root.join(ScenarioExecution_.scenarioMessages, JoinType.LEFT)
-            .join(Message_.headers);
+            .join(Message_.headers, JoinType.LEFT);
     }
 
     private static Path<String> joinMessageHeadersAndGetValue(Root<ScenarioExecution> root) {
