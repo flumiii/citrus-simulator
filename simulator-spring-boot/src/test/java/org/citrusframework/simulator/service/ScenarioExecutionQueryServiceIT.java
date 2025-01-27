@@ -24,7 +24,6 @@ import org.citrusframework.simulator.model.ScenarioAction;
 import org.citrusframework.simulator.model.ScenarioExecution;
 import org.citrusframework.simulator.model.ScenarioExecution_;
 import org.citrusframework.simulator.model.ScenarioParameter;
-import org.citrusframework.simulator.model.TestResult_;
 import org.citrusframework.simulator.repository.ScenarioExecutionRepository;
 import org.citrusframework.simulator.service.criteria.ScenarioExecutionCriteria;
 import org.citrusframework.simulator.service.filter.IntegerFilter;
@@ -35,6 +34,8 @@ import org.citrusframework.simulator.web.rest.ScenarioActionResourceIT;
 import org.citrusframework.simulator.web.rest.ScenarioExecutionResourceIT;
 import org.citrusframework.simulator.web.rest.ScenarioParameterResourceIT;
 import org.citrusframework.simulator.web.rest.TestResultResourceIT;
+import org.hibernate.LazyInitializationException;
+import org.hibernate.collection.spi.PersistentSet;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
@@ -52,12 +53,17 @@ import org.springframework.data.domain.Sort.Direction;
 import java.time.Instant;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.function.Consumer;
 import java.util.stream.Stream;
 
 import static java.time.temporal.ChronoUnit.MINUTES;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.InstanceOfAssertFactories.type;
+import static org.citrusframework.simulator.model.Message.Direction.OUTBOUND;
 import static org.citrusframework.simulator.model.TestResult.Status.FAILURE;
 import static org.junit.jupiter.params.provider.Arguments.arguments;
+import static org.springframework.data.domain.Pageable.unpaged;
 import static org.springframework.data.domain.Sort.Direction.ASC;
 import static org.springframework.data.domain.Sort.Direction.DESC;
 
@@ -120,7 +126,8 @@ class ScenarioExecutionQueryServiceIT {
                 .addScenarioMessage(
                     MessageResourceIT.createEntityBuilder(entityManager)
                         .citrusMessageId("6eda9f2b-3a7a-423f-b19c-329ed3dd5ecc")
-                        .payload("bar")
+                        .direction(Message.Direction.OUTBOUND)
+                        .payload("pong")
                         .build()
                         .addHeader(MessageHeader.builder()
                             .name(TRACEPARENT)
@@ -181,6 +188,38 @@ class ScenarioExecutionQueryServiceIT {
     class FindByCriteria {
 
         @Test
+        void selectAll() {
+            var scenarioExecutionCriteria = new ScenarioExecutionCriteria();
+            Page<ScenarioExecution> scenarioExecutionPage = fixture.findByCriteria(scenarioExecutionCriteria, unpaged());
+
+            assertThat(scenarioExecutionPage)
+                .asInstanceOf(type(Page.class))
+                .satisfies(
+                    p -> assertThat(p.getTotalPages()).isEqualTo(1),
+                    p -> assertThat(p.getTotalElements()).isEqualTo(3),
+                    p -> assertThat(p.getContent()).hasSize(3),
+                    p -> assertThat(p.getContent())
+                        .allSatisfy(
+                            c -> assertThat(c)
+                                .asInstanceOf(type(ScenarioExecution.class))
+                                .satisfies(
+                                    s -> assertThat(s.getTestResult().getStatus()).isNotNull(),
+                                    s -> assertThat(s.getScenarioParameters()).hasSize(1),
+                                    s -> assertThat(s.getScenarioActions()).hasSize(1),
+                                    s -> assertThat(s.getScenarioMessages())
+                                        .hasSize(1)
+                                        .first()
+                                        .asInstanceOf(type(Message.class))
+                                        .extracting(Message::getHeaders)
+                                        .asInstanceOf(type(PersistentSet.class))
+                                        .extracting(PersistentSet::isEmpty)
+                                        .isEqualTo(false)
+                                )
+                        )
+                );
+        }
+
+        @Test
         void selectExecutionIdLessThan() {
             var scenarioExecutionCriteria = new ScenarioExecutionCriteria();
             scenarioExecutionCriteria.setExecutionId((LongFilter) new LongFilter().setLessThan(scenarioExecutions.get(1).getExecutionId()));
@@ -216,7 +255,7 @@ class ScenarioExecutionQueryServiceIT {
         }
 
         @Test
-        void selectWithJoinToScenarioActions() {
+        void selectWithSelectiveJoinScenarioActions() {
             var scenarioExecutionCriteria = new ScenarioExecutionCriteria();
             scenarioExecutionCriteria.setScenarioActionsId((LongFilter) new LongFilter().setEquals(scenarioAction.getActionId()));
 
@@ -224,7 +263,7 @@ class ScenarioExecutionQueryServiceIT {
         }
 
         @Test
-        void selectWithJoinToMessages() {
+        void selectWithSelectiveJoinMessages() {
             var scenarioExecutionCriteria = new ScenarioExecutionCriteria();
             scenarioExecutionCriteria.setScenarioMessagesId((LongFilter) new LongFilter().setEquals(message.getMessageId()));
 
@@ -232,7 +271,7 @@ class ScenarioExecutionQueryServiceIT {
         }
 
         @Test
-        void selectWithJoinToMessagesPayload() {
+        void selectWithSelectiveJoinMessagesPayload() {
             var scenarioExecutionCriteria = new ScenarioExecutionCriteria();
             scenarioExecutionCriteria.setScenarioMessagesPayload((StringFilter) new StringFilter().setEquals(message.getPayload()));
 
@@ -240,7 +279,7 @@ class ScenarioExecutionQueryServiceIT {
         }
 
         @Test
-        void selectWithJoinToScenarioParameters() {
+        void selectWithSelectiveJoinScenarioParameters() {
             var scenarioExecutionCriteria = new ScenarioExecutionCriteria();
             scenarioExecutionCriteria.setScenarioParametersId((LongFilter) new LongFilter().setEquals(scenarioParameter.getParameterId()));
 
@@ -248,14 +287,14 @@ class ScenarioExecutionQueryServiceIT {
         }
 
         @Test
-        void selectWithJoinToTestResult() {
+        void selectWithSelectiveJoinTestResult() {
             var scenarioExecutionCriteria = new ScenarioExecutionCriteria();
             scenarioExecutionCriteria.setStatus((IntegerFilter) new IntegerFilter().setEquals(FAILURE.getId()));
 
             assertThatScenarioExecutionAtIndexSelectedByCriteria(scenarioExecutionCriteria, 2);
         }
 
-        public static Stream<Arguments> selectWithJoinToMessageHeader() {
+        public static Stream<Arguments> selectWithSelectiveJoinMessageHeader() {
             return Stream.of(
                 arguments("83def191b1dda4c79c00ae4c443f0ca2", 0),
                 arguments(TRACEPARENT.toLowerCase() + "=" + MESSAGE_1_TRACEPARENT.toLowerCase(), 1),
@@ -267,7 +306,7 @@ class ScenarioExecutionQueryServiceIT {
 
         @MethodSource
         @ParameterizedTest
-        void selectWithJoinToMessageHeader(String headerFilterPattern, int expectedIndex) {
+        void selectWithSelectiveJoinMessageHeader(String headerFilterPattern, int expectedIndex) {
             var scenarioExecutionCriteria = new ScenarioExecutionCriteria();
             scenarioExecutionCriteria.setHeaders(headerFilterPattern);
 
@@ -275,7 +314,7 @@ class ScenarioExecutionQueryServiceIT {
         }
 
         @Test
-        void selectWithJoinToMessageHeaderMultipleCriteria() {
+        void selectWithSelectiveJoinMessageHeaderMultipleCriteria() {
             var scenarioExecutionCriteria = new ScenarioExecutionCriteria();
             scenarioExecutionCriteria.setHeaders(SOURCE + "=" + SOURCE_VALUE);
 
@@ -286,6 +325,17 @@ class ScenarioExecutionQueryServiceIT {
 
             scenarioExecutionCriteria.setHeaders(scenarioExecutionCriteria.getHeaders() + "; " + TRACEPARENT + "=" + MESSAGE_1_TRACEPARENT);
             assertThatScenarioExecutionAtIndexSelectedByCriteria(scenarioExecutionCriteria, 1);
+        }
+
+        @Test
+        void selectWithDirectionalMessageFilter() {
+            var scenarioExecutionCriteria = new ScenarioExecutionCriteria();
+            scenarioExecutionCriteria.setScenarioMessagesDirection((IntegerFilter) new IntegerFilter().setEquals(OUTBOUND.getId()));
+
+            Page<ScenarioExecution> scenarioExecutionPage = fixture.findByCriteria(scenarioExecutionCriteria, unpaged());
+
+            assertThat(scenarioExecutionPage.getTotalPages()).isEqualTo(1);
+            assertThat(scenarioExecutionPage.getTotalElements()).isEqualTo(1L);
         }
 
         static Stream<Arguments> testPagination() {
@@ -313,7 +363,7 @@ class ScenarioExecutionQueryServiceIT {
         void selectSecondPage() {
             Page<ScenarioExecution> testResultPage = fixture.findByCriteria(
                 new ScenarioExecutionCriteria(),
-                PageRequest.of(1, 1, Sort.by(ASC, TestResult_.ID))
+                PageRequest.of(1, 1, Sort.by(ASC, ScenarioExecution_.EXECUTION_ID))
             );
 
             assertThat(testResultPage.getTotalPages()).isEqualTo(3);
@@ -383,6 +433,85 @@ class ScenarioExecutionQueryServiceIT {
         }
     }
 
+    @Nested
+    class FindByCriteria_withResultDetailsConfiguration {
+
+        public static Stream<Arguments> selectRootEntityOnly() {
+            return Stream.of(
+                arguments(
+                    new ScenarioExecutionQueryService.ResultDetailsConfiguration(false, false, false, false),
+                    (Consumer<ScenarioExecution>) scenarioExecution -> {
+                        assertThatThrownBy(() -> scenarioExecution.getScenarioParameters().isEmpty()).isInstanceOf(LazyInitializationException.class);
+                        assertThatThrownBy(() -> scenarioExecution.getScenarioActions().isEmpty()).isInstanceOf(LazyInitializationException.class);
+                        assertThatThrownBy(() -> scenarioExecution.getScenarioMessages().isEmpty()).isInstanceOf(LazyInitializationException.class);
+                    }
+                ),
+                arguments(
+                    new ScenarioExecutionQueryService.ResultDetailsConfiguration(true, false, false, false),
+                    (Consumer<ScenarioExecution>) scenarioExecution -> {
+                        assertThatThrownBy(() -> scenarioExecution.getScenarioParameters().isEmpty()).isInstanceOf(LazyInitializationException.class);
+                        assertThat(scenarioExecution.getScenarioActions()).isNotEmpty();
+                        assertThatThrownBy(() -> scenarioExecution.getScenarioMessages().isEmpty()).isInstanceOf(LazyInitializationException.class);
+                    }
+                ),
+                arguments(
+                    new ScenarioExecutionQueryService.ResultDetailsConfiguration(false, true, false, false),
+                    (Consumer<ScenarioExecution>) scenarioExecution -> {
+                        assertThatThrownBy(() -> scenarioExecution.getScenarioParameters().isEmpty()).isInstanceOf(LazyInitializationException.class);
+                        assertThatThrownBy(() -> scenarioExecution.getScenarioActions().isEmpty()).isInstanceOf(LazyInitializationException.class);
+                        assertThat(scenarioExecution.getScenarioMessages()).isNotEmpty();
+                        scenarioExecution.getScenarioMessages().forEach(scenarioMessage ->
+                            assertThatThrownBy(() -> scenarioMessage.getHeaders().isEmpty()).isInstanceOf(LazyInitializationException.class));
+                    }
+                ),
+                arguments(
+                    new ScenarioExecutionQueryService.ResultDetailsConfiguration(false, false, true, false),
+                    (Consumer<ScenarioExecution>) scenarioExecution -> {
+                        assertThatThrownBy(() -> scenarioExecution.getScenarioParameters().isEmpty()).isInstanceOf(LazyInitializationException.class);
+                        assertThatThrownBy(() -> scenarioExecution.getScenarioActions().isEmpty()).isInstanceOf(LazyInitializationException.class);
+                        assertThat(scenarioExecution.getScenarioMessages()).isNotEmpty();
+                        scenarioExecution.getScenarioMessages().forEach(scenarioMessage ->
+                            assertThat(scenarioMessage.getHeaders()).isNotEmpty());
+                    }
+                ),
+                arguments(
+                    new ScenarioExecutionQueryService.ResultDetailsConfiguration(false, false, false, true),
+                    (Consumer<ScenarioExecution>) scenarioExecution -> {
+                        assertThat(scenarioExecution.getScenarioParameters()).isNotEmpty();
+                        assertThatThrownBy(() -> scenarioExecution.getScenarioActions().isEmpty()).isInstanceOf(LazyInitializationException.class);
+                        assertThatThrownBy(() -> scenarioExecution.getScenarioMessages().isEmpty()).isInstanceOf(LazyInitializationException.class);
+                    }
+                )
+            );
+        }
+
+        @MethodSource
+        @ParameterizedTest
+        void selectRootEntityOnly(ScenarioExecutionQueryService.ResultDetailsConfiguration resultDetailsConfiguration, Consumer<ScenarioExecution> verifier) {
+            var scenarioExecutionCriteria = new ScenarioExecutionCriteria();
+            Page<ScenarioExecution> scenarioExecutionPage = fixture.findByCriteria(
+                scenarioExecutionCriteria,
+                unpaged(),
+                resultDetailsConfiguration
+            );
+
+            assertThat(scenarioExecutionPage)
+                .asInstanceOf(type(Page.class))
+                .satisfies(
+                    p -> assertThat(p.getTotalPages()).isEqualTo(1),
+                    p -> assertThat(p.getTotalElements()).isEqualTo(3),
+                    p -> assertThat(p.getContent()).hasSize(3)
+                );
+
+            var content = scenarioExecutionPage.getContent().stream().toList();
+            assertThat(content).hasSize(3);
+            for (var scenarioExecution : content) {
+                assertThat(scenarioExecution.getTestResult().getStatus()).isNotNull();
+                verifier.accept(scenarioExecution);
+            }
+        }
+    }
+
     @AfterEach
     void afterEachTeardown() {
         scenarioExecutionRepository.deleteAll(scenarioExecutions);
@@ -391,8 +520,15 @@ class ScenarioExecutionQueryServiceIT {
     private void assertThatScenarioExecutionAtIndexSelectedByCriteria(ScenarioExecutionCriteria scenarioExecutionCriteria, int index) {
         Page<ScenarioExecution> scenarioExecutionPage = fixture.findByCriteria(scenarioExecutionCriteria, PageRequest.of(0, 1, Sort.by(ASC, ScenarioExecution_.EXECUTION_ID)));
 
-        assertThat(scenarioExecutionPage.getTotalPages()).isEqualTo(1);
-        assertThat(scenarioExecutionPage.getTotalElements()).isEqualTo(1L);
-        assertThat(scenarioExecutionPage.getContent()).hasSize(1).first().isEqualTo(scenarioExecutions.get(index));
+        assertThat(scenarioExecutionPage)
+            .asInstanceOf(type(Page.class))
+            .satisfies(
+                p -> assertThat(p.getTotalPages()).isEqualTo(1),
+                p -> assertThat(p.getTotalElements()).isEqualTo(1),
+                p -> assertThat(p.getContent())
+                    .hasSize(1)
+                    .first()
+                    .isEqualTo(scenarioExecutions.get(index))
+            );
     }
 }
